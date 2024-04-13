@@ -22,7 +22,7 @@ std::string ReadLine() {
 int ReadLineWithNumber() {
     int result = 0;
     std::cin >> result;
-    ReadLine();
+    std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');  
     return result;
 }
 
@@ -37,17 +37,17 @@ public:
         }
     }
 
-    void AddDocument(int document_id, const std::string& document) {
-        
-        const std::vector<std::string> words = SplitIntoWordsNoStop(document);
-        int words_count = words.size();
-        
+   void AddDocument(int document_id, const std::string& document) {
+    const std::vector<std::string> words = SplitIntoWordsNoStop(document);
+    int words_count = words.size();
+    if (words_count > 0) {
+        double term_frequency = 1.0 / words_count;
         for (const std::string& word : words) {
-            word_to_documents_[word][document_id] += 1.0 / words_count;
+            word_to_documents_[word][document_id] += term_frequency;
         }
-        
-        document_count_++;
     }
+    document_count_++;
+}
 
     std::vector<Document> FindTopDocuments(const std::string& raw_query) const {
         
@@ -77,40 +77,42 @@ private:
     std::map<std::string, std::map<int, double>> word_to_documents_;
     std::set<std::string> stop_words_;
     int document_count_ = 0;
-
+    
+    double CalculateIDF(const std::string& word) const {
+    if (word_to_documents_.find(word) == word_to_documents_.end() || word_to_documents_.at(word).size() == 0) {
+        return 0.0;
+    }
+    return std::log(document_count_ / static_cast<double>(word_to_documents_.at(word).size()));
+}
     
     std::vector<std::pair<int, double>> FindAllDocuments(const std::set<std::string>& query_words) const {
-        std::map<int, double> document_to_relevance;
+    std::map<int, double> document_to_relevance;
 
-        for (const auto& word : query_words) {
-
-            if (word_to_documents_.count(word) > 0) {
-                const double idf = std::log(document_count_ / static_cast<double>(word_to_documents_.at(word).size()));
-
-                for (const auto& [document_id, tf] : word_to_documents_.at(word)) {
-                    document_to_relevance[document_id] += tf * idf;
-                }
+    for (const auto& word : query_words) {
+        if (word_to_documents_.count(word) > 0) {
+            const double idf = CalculateIDF(word);  
+            for (const auto& [document_id, tf] : word_to_documents_.at(word)) {
+                document_to_relevance[document_id] += tf * idf;
             }
         }
-
-        for (const auto& word : stop_words_) {
-            
-            if (word_to_documents_.count(word) > 0) {
-                
-                for (const auto& [document_id, _] : word_to_documents_.at(word)) {
-                    document_to_relevance.erase(document_id);
-                }
-            }
-        }
-
-        std::vector<std::pair<int, double>> result;
-
-        for (const auto& [document_id, relevance] : document_to_relevance) {
-            result.push_back({document_id, relevance});
-        }
-
-        return result;
     }
+
+    for (const auto& word : stop_words_) {
+        if (word_to_documents_.count(word) > 0) {
+            for (const auto& [document_id, _] : word_to_documents_.at(word)) {
+                document_to_relevance.erase(document_id);
+            }
+        }
+    }
+
+    std::vector<std::pair<int, double>> result;
+
+    for (const auto& [document_id, relevance] : document_to_relevance) {
+        result.push_back({document_id, relevance});
+    }
+
+    return result;
+}
 
     std::set<std::string> ParseQuery(const std::string& text) const {
         std::set<std::string> query_words;
